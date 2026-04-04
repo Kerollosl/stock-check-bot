@@ -9,6 +9,20 @@ from rich.console import Console
 load_dotenv()
 console = Console()
 
+WATCHLIST_FILE = "watchlist.txt"
+
+
+def load_watchlist(config_path: str = "config.yaml") -> list[str]:
+    """Load tickers from watchlist.txt (one per line), falling back to config.yaml."""
+    if os.path.exists(WATCHLIST_FILE):
+        with open(WATCHLIST_FILE) as f:
+            tickers = [line.strip().upper() for line in f if line.strip() and not line.startswith("#")]
+        if tickers:
+            return tickers
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+    return cfg.get("watchlist", [])
+
 
 @click.group()
 def cli():
@@ -25,12 +39,9 @@ def scan(config, ticker):
     from .indicators.macro import MacroAnalyzer
     from .dashboard.market_report import MarketDashboard
 
-    with open(config) as f:
-        cfg = yaml.safe_load(f)
-
-    tickers = list(ticker) if ticker else cfg.get("watchlist", [])
+    tickers = list(ticker) if ticker else load_watchlist(config)
     if not tickers:
-        console.print("[red]No tickers specified. Set watchlist in config.yaml or use -t TICKER[/red]")
+        console.print("[red]No tickers specified. Add tickers to watchlist.txt or use -t TICKER[/red]")
         return
 
     dashboard = MarketDashboard(config)
@@ -90,7 +101,7 @@ def full(config, ticker):
     with open(config) as f:
         cfg = yaml.safe_load(f)
 
-    tickers = list(ticker) if ticker else cfg.get("watchlist", [])
+    tickers = list(ticker) if ticker else load_watchlist(config)
     bt_cfg = cfg.get("backtest", {})
 
     # Backtest first ticker
@@ -162,6 +173,18 @@ def check(ticker, config):
     console.print(f"  Daily:  {dips['daily_change_pct']:+.2f}%  {'[red]DIP[/red]' if dips['daily_dip'] else '[green]OK[/green]'}")
     console.print(f"  Weekly: {dips['weekly_change_pct']:+.2f}%  {'[red]DIP[/red]' if dips['weekly_dip'] else '[green]OK[/green]'}")
     console.print(f"  From High: {dips['from_high_pct']:+.2f}%  {'[red]MAJOR DIP[/red]' if dips['major_dip_from_high'] else '[green]OK[/green]'}")
+
+
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=8000, type=int, help="Port to bind to")
+def web(config, host, port):
+    """Launch the web dashboard."""
+    import uvicorn
+    os.environ["SCB_CONFIG"] = config
+    console.print(f"[bold cyan]Starting Stock Check Bot dashboard at http://{host}:{port}[/bold cyan]")
+    uvicorn.run("src.web.app:app", host=host, port=port, reload=False)
 
 
 if __name__ == "__main__":

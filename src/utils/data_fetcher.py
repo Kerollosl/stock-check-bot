@@ -11,7 +11,10 @@ class DataFetcher:
 
     def __init__(self):
         fred_key = os.getenv("FRED_API_KEY")
-        self.fred = Fred(api_key=fred_key) if fred_key else None
+        if fred_key and fred_key != "your_fred_api_key_here" and len(fred_key) == 32:
+            self.fred = Fred(api_key=fred_key)
+        else:
+            self.fred = None
 
     def get_stock_history(self, ticker: str, period: str = "2y") -> pd.DataFrame:
         stock = yf.Ticker(ticker)

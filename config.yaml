@@ -1,15 +1,12 @@
 # Stock Check Bot Configuration
 
 watchlist:
-  - AAPL
-  - MSFT
-  - GOOGL
-  - AMZN
-  - NVDA
-  - META
-  - TSLA
-  - SPY
-  - QQQ
+- MSFT
+- AMZN
+- GOOG
+- NFLX
+- META
+- NVDA
 
 # Signal weights for the composite score (must sum to 1.0)
 weights:

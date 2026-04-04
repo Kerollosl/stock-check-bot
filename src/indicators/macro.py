@@ -15,13 +15,25 @@ class MacroAnalyzer:
 
     def _load(self):
         if self._fed_rate is None:
-            self._fed_rate = self.fetcher.get_fed_funds_rate()
+            try:
+                self._fed_rate = self.fetcher.get_fed_funds_rate()
+            except Exception:
+                self._fed_rate = pd.Series(dtype=float)
         if self._yields is None:
-            self._yields = self.fetcher.get_treasury_yields()
+            try:
+                self._yields = self.fetcher.get_treasury_yields()
+            except Exception:
+                self._yields = {}
         if self._vix is None:
-            self._vix = self.fetcher.get_vix()
+            try:
+                self._vix = self.fetcher.get_vix()
+            except Exception:
+                self._vix = pd.DataFrame()
         if self._spy is None:
-            self._spy = self.fetcher.get_market_index("SPY", "2y")
+            try:
+                self._spy = self.fetcher.get_market_index("SPY", "2y")
+            except Exception:
+                self._spy = pd.DataFrame()
 
     def fed_funds_rate_score(self) -> float:
         """Score based on Fed Funds Rate trend. Falling rates = bullish."""
