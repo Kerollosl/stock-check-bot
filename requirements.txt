@@ -1,0 +1,10 @@
+yfinance>=0.2.31
+pandas>=2.1.0
+numpy>=1.25.0
+ta>=0.11.0
+fredapi>=0.5.1
+rich>=13.6.0
+pyyaml>=6.0.1
+click>=8.1.7
+python-dotenv>=1.0.0
+matplotlib>=3.8.0

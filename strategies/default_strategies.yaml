@@ -1,0 +1,33 @@
+# Custom strategies can be defined here and loaded at runtime.
+# Each strategy needs weights that sum to 1.0 and threshold levels.
+#
+# Example:
+#
+# my_custom_strategy:
+#   name: "My Custom Strategy"
+#   description: "Describe what this strategy prioritizes"
+#   weights:
+#     technical:
+#       macd: 0.10
+#       golden_death_cross: 0.10
+#       rsi: 0.08
+#       bollinger: 0.07
+#       volume_trend: 0.05
+#     fundamental:
+#       earnings_surprise: 0.12
+#       pe_ratio: 0.08
+#       revenue_growth: 0.05
+#       earnings_growth: 0.05
+#     macro:
+#       fed_funds_rate: 0.08
+#       yield_curve: 0.07
+#       market_trend: 0.05
+#       vix: 0.05
+#       sector_rotation: 0.05
+#   thresholds:
+#     strong_buy: 0.70
+#     buy: 0.55
+#     hold_upper: 0.55
+#     hold_lower: 0.45
+#     sell: 0.45
+#     strong_sell: 0.30
