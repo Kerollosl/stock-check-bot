@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import yaml
+
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -22,6 +24,17 @@ class MarketDashboard:
         self.console = Console()
         self.fetcher = DataFetcher()
         self.scorer = WeightedScorer(config_path)
+        with open(config_path) as config_file:
+            self.config = yaml.safe_load(config_file)
+
+    def _detect_dips(self, analyzer: TechnicalAnalyzer) -> dict:
+        dip_config = self.config.get("dip_detection", {})
+        return analyzer.detect_dips(
+            daily_threshold=dip_config.get("daily_drop_pct", -3.0),
+            weekly_threshold=dip_config.get("weekly_drop_pct", -7.0),
+            from_high_threshold=dip_config.get("from_high_pct", -15.0),
+            lookback=dip_config.get("lookback_days", 252),
+        )
 
     def _score_color(self, score: float) -> str:
         if score >= 0.7:
@@ -49,7 +62,7 @@ class MarketDashboard:
         filled = int(score * width)
         return "█" * filled + "░" * (width - filled)
 
-    def render_stock_card(self, ticker: str) -> Panel:
+    def render_stock_card(self, ticker: str, macro_scores: dict | None = None) -> Panel:
         """Render analysis for a single stock."""
         try:
             df = self.fetcher.get_stock_history(ticker, period="2y")
@@ -59,7 +72,7 @@ class MarketDashboard:
             # Technical
             ta = TechnicalAnalyzer(df)
             tech_scores = ta.get_all_scores()
-            dips = ta.detect_dips()
+            dips = self._detect_dips(ta)
 
             # Fundamental
             earnings_data = self.fetcher.get_earnings(ticker)
@@ -67,8 +80,8 @@ class MarketDashboard:
             fund_scores = fa.get_all_scores()
 
             # Macro (shared)
-            macro = MacroAnalyzer(self.fetcher)
-            macro_scores = macro.get_all_scores()
+            if macro_scores is None:
+                macro_scores = MacroAnalyzer(self.fetcher).get_all_scores()
 
             # Composite
             result = self.scorer.compute_composite(tech_scores, fund_scores, macro_scores)
@@ -135,10 +148,10 @@ class MarketDashboard:
         except Exception as e:
             return Panel(f"[red]Error: {e}[/red]", title=ticker, width=45)
 
-    def render_macro_panel(self) -> Panel:
+    def render_macro_panel(self, scores: dict | None = None) -> Panel:
         """Render macro environment overview."""
-        macro = MacroAnalyzer(self.fetcher)
-        scores = macro.get_all_scores()
+        if scores is None:
+            scores = MacroAnalyzer(self.fetcher).get_all_scores()
 
         lines = []
         for k, v in scores.items():
@@ -222,15 +235,16 @@ class MarketDashboard:
         )
         self.console.print()
 
-        # Macro overview
-        self.console.print(self.render_macro_panel())
+        # Fetch shared macro inputs once for the entire report.
+        macro_scores = MacroAnalyzer(self.fetcher).get_all_scores()
+        self.console.print(self.render_macro_panel(macro_scores))
         self.console.print()
 
         # Stock cards in rows of 3
         cards = []
         for ticker in tickers:
             self.console.print(f"[dim]Analyzing {ticker}...[/dim]", end="\r")
-            cards.append(self.render_stock_card(ticker))
+            cards.append(self.render_stock_card(ticker, macro_scores))
 
         for i in range(0, len(cards), 3):
             batch = cards[i : i + 3]

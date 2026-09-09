@@ -1,0 +1,136 @@
+name: Stock check
+
+on:
+  schedule:
+    - cron: "30 16 * * 1-5"
+      timezone: "America/New_York"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: stock-check
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Initialize failure report
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p reports state
+          printf '# Stock Check failure\n\nThe workflow stopped before a structured report was generated. Review the workflow logs for the underlying error.\n' > reports/summary.md
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Restore previous report
+        id: restore-state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/latest_report.json
+          key: stock-check-state-${{ github.run_id }}
+          restore-keys: |
+            stock-check-state-
+
+      - name: Generate stock report
+        id: report
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        shell: bash
+        run: |
+          set +e
+          python -m src.main report \
+            --output reports/latest_report.json \
+            --summary reports/summary.md \
+            --events reports/events.json \
+            --previous state/latest_report.json
+          report_exit_code=$?
+          set -e
+
+          if [[ -f reports/events.json && -f reports/summary.md && -f reports/latest_report.json ]]; then
+            notification_required=$(python -c "import json; print(str(json.load(open('reports/events.json'))['notification_required']).lower())")
+            report_created=true
+          else
+            notification_required=true
+            report_created=false
+            printf '# Stock Check failure\n\nThe structured report could not be generated. Review the workflow logs for the underlying error.\n' > reports/summary.md
+          fi
+
+          echo "exit_code=${report_exit_code}" >> "${GITHUB_OUTPUT}"
+          echo "notification_required=${notification_required}" >> "${GITHUB_OUTPUT}"
+          echo "report_created=${report_created}" >> "${GITHUB_OUTPUT}"
+
+      - name: Save report for the next run
+        if: steps.report.outputs.report_created == 'true'
+        shell: bash
+        run: cp reports/latest_report.json state/latest_report.json
+
+      - name: Cache report
+        if: steps.report.outputs.report_created == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: state/latest_report.json
+          key: stock-check-state-${{ github.run_id }}
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-check-report-${{ github.run_id }}
+          path: reports/
+          retention-days: 30
+
+      - name: Add report to workflow summary
+        if: always()
+        run: cat reports/summary.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Create or update alert issue
+        if: always() && (failure() || steps.report.outputs.notification_required == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          issue_title="Stock Check alert — $(TZ=America/New_York date +%Y-%m-%d)"
+          issue_number=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --search "${issue_title} in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"${issue_title}\") | .number" \
+            | head -n 1)
+
+          if [[ -n "${issue_number}" ]]; then
+            gh issue comment "${issue_number}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body-file reports/summary.md
+          else
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${issue_title}" \
+              --body-file reports/summary.md \
+              --assignee "${GITHUB_REPOSITORY_OWNER}"
+          fi
+
+      - name: Fail on degraded data
+        if: steps.report.outputs.exit_code != '0'
+        run: exit 1

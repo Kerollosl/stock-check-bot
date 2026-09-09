@@ -71,8 +71,6 @@ class DataFetcher:
         series_ids = {
             "2y": "DGS2",
             "10y": "DGS10",
-            "30y": "DGS30",
-            "3m": "DGS3MO",
         }
         yields = {}
         start = (datetime.now() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")

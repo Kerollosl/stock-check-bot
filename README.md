@@ -11,6 +11,7 @@ Automated, emotion-free stock analysis using weighted algorithmic scoring across
 - **Dip Detection** — Alerts on daily drops, weekly drops, and distance from 52-week highs
 - **Strategy Backtesting** — Compare 5 built-in strategies (Momentum, Value, Macro-Driven, Balanced, Contrarian) against historical data
 - **Rich Terminal Dashboard** — Color-coded market report with stock cards, macro overview, and backtest comparison tables
+- **Scheduled Monitoring** — Weekday GitHub Actions scan with structured reports and alert issues only for meaningful changes
 
 ## Setup
 
@@ -40,9 +41,38 @@ python -m src.main backtest -t SPY
 # Full dashboard + backtest
 python -m src.main full
 
+# Structured report for automation
+python -m src.main report \
+  --output reports/latest_report.json \
+  --summary reports/summary.md \
+  --events reports/events.json
+
 # Override watchlist
 python -m src.main scan -t AAPL -t MSFT -t NVDA
 ```
+
+## Automated weekday monitoring
+
+The included `Stock check` GitHub Actions workflow runs at 4:30 PM
+`America/New_York` every weekday. It:
+
+1. Runs the unit tests and generates JSON and Markdown reports.
+2. Compares the report with the most recent run.
+3. Opens a GitHub issue only when a signal changes, a configured dip begins, a
+   composite score moves by at least 0.05, the watchlist changes, or a data
+   source fails.
+4. Stores each report as a 30-day workflow artifact.
+
+Add the FRED key as a GitHub Actions repository secret named
+`FRED_API_KEY`. You can test the workflow immediately from the repository's
+Actions tab with **Run workflow**.
+
+Because GitHub automatically disables scheduled workflows in inactive public
+repositories after 60 days, keep an eye out for GitHub's warning and re-enable
+the workflow if this repository has no other activity for that long.
+
+Scheduled reports are monitoring output, not financial advice. The workflow
+does not connect to a brokerage or place trades.
 
 ## Configuration
 

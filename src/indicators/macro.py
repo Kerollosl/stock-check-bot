@@ -1,6 +1,6 @@
 import pandas as pd
-import numpy as np
 from ..utils.data_fetcher import DataFetcher
+from ..utils.errors import sanitize_error
 
 
 class MacroAnalyzer:
@@ -12,28 +12,142 @@ class MacroAnalyzer:
         self._yields = None
         self._vix = None
         self._spy = None
+        self._loaded = False
+        self._health = {}
+
+    @staticmethod
+    def _as_of(value) -> str | None:
+        """Return the newest timestamp available in a fetched object."""
+        if isinstance(value, dict):
+            timestamps = [MacroAnalyzer._as_of(item) for item in value.values()]
+            timestamps = [timestamp for timestamp in timestamps if timestamp]
+            return max(timestamps) if timestamps else None
+
+        if value is None or getattr(value, "empty", True):
+            return None
+
+        if isinstance(value, pd.Series):
+            value = value.dropna()
+            if value.empty:
+                return None
+        timestamp = value.index[-1]
+        return timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp)
+
+    def _record_health(
+        self,
+        source: str,
+        value,
+        error: BaseException | None = None,
+        required_keys: tuple[str, ...] = (),
+        minimum_observations: int = 1,
+    ):
+        if error is not None:
+            self._health[source] = {
+                "status": "error",
+                "as_of": None,
+                "message": sanitize_error(error),
+            }
+            return
+
+        if required_keys:
+            series_health = {}
+            missing_keys = []
+            for key in required_keys:
+                series = value.get(key) if isinstance(value, dict) else None
+                observations = len(series.dropna()) if series is not None else 0
+                series_health[key] = {
+                    "as_of": self._as_of(series),
+                    "observations": observations,
+                }
+                if observations < minimum_observations:
+                    missing_keys.append(key)
+
+            required_dates = [
+                details["as_of"]
+                for details in series_health.values()
+                if details["as_of"]
+            ]
+            as_of = min(required_dates) if required_dates else None
+        else:
+            series_health = None
+            missing_keys = []
+            cleaned = value.dropna() if value is not None else None
+            observations = len(cleaned) if cleaned is not None else 0
+            as_of = self._as_of(value)
+            if observations < minimum_observations:
+                missing_keys.append(source)
+
+        if missing_keys:
+            self._health[source] = {
+                "status": "partial",
+                "as_of": as_of,
+                "message": (
+                    "Insufficient required data: " + ", ".join(missing_keys)
+                ),
+                **({"series": series_health} if series_health else {}),
+            }
+            return
+
+        if as_of is None:
+            self._health[source] = {
+                "status": "unavailable",
+                "as_of": None,
+                "message": "No data returned",
+            }
+        else:
+            self._health[source] = {
+                "status": "ok",
+                "as_of": as_of,
+                **({"series": series_health} if series_health else {}),
+            }
 
     def _load(self):
-        if self._fed_rate is None:
-            try:
-                self._fed_rate = self.fetcher.get_fed_funds_rate()
-            except Exception:
-                self._fed_rate = pd.Series(dtype=float)
-        if self._yields is None:
-            try:
-                self._yields = self.fetcher.get_treasury_yields()
-            except Exception:
-                self._yields = {}
-        if self._vix is None:
-            try:
-                self._vix = self.fetcher.get_vix()
-            except Exception:
-                self._vix = pd.DataFrame()
-        if self._spy is None:
-            try:
-                self._spy = self.fetcher.get_market_index("SPY", "2y")
-            except Exception:
-                self._spy = pd.DataFrame()
+        if self._loaded:
+            return
+
+        try:
+            self._fed_rate = self.fetcher.get_fed_funds_rate()
+            self._record_health(
+                "fred_funds",
+                self._fed_rate,
+                minimum_observations=3,
+            )
+        except Exception as error:
+            self._fed_rate = pd.Series(dtype=float)
+            self._record_health("fred_funds", self._fed_rate, error)
+
+        try:
+            self._yields = self.fetcher.get_treasury_yields()
+            self._record_health(
+                "treasury_yields",
+                self._yields,
+                required_keys=("2y", "10y"),
+                minimum_observations=1,
+            )
+        except Exception as error:
+            self._yields = {}
+            self._record_health("treasury_yields", self._yields, error)
+
+        try:
+            self._vix = self.fetcher.get_vix()
+            self._record_health("vix", self._vix)
+        except Exception as error:
+            self._vix = pd.DataFrame()
+            self._record_health("vix", self._vix, error)
+
+        try:
+            self._spy = self.fetcher.get_market_index("SPY", "2y")
+            self._record_health("spy", self._spy, minimum_observations=200)
+        except Exception as error:
+            self._spy = pd.DataFrame()
+            self._record_health("spy", self._spy, error)
+
+        self._loaded = True
+
+    def get_data_health(self) -> dict[str, dict]:
+        """Describe source availability and freshness for unattended reports."""
+        self._load()
+        return {source: details.copy() for source, details in self._health.items()}
 
     def fed_funds_rate_score(self) -> float:
         """Score based on Fed Funds Rate trend. Falling rates = bullish."""

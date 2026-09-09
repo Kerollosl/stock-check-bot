@@ -14,6 +14,7 @@ from ..indicators.macro import MacroAnalyzer
 from ..scoring.weighted_scorer import WeightedScorer
 from ..backtester.engine import BacktestEngine
 from ..backtester.strategies import STRATEGIES
+from ..utils.errors import sanitize_error
 
 app = FastAPI(title="Stock Check Bot")
 
@@ -84,7 +85,13 @@ async def api_stock(ticker: str):
 
         ta = TechnicalAnalyzer(df)
         tech_scores = ta.get_all_scores()
-        raw_dips = ta.detect_dips()
+        dip_config = get_config().get("dip_detection", {})
+        raw_dips = ta.detect_dips(
+            daily_threshold=dip_config.get("daily_drop_pct", -3.0),
+            weekly_threshold=dip_config.get("weekly_drop_pct", -7.0),
+            from_high_threshold=dip_config.get("from_high_pct", -15.0),
+            lookback=dip_config.get("lookback_days", 252),
+        )
         dips = {}
         for k, v in raw_dips.items():
             if hasattr(v, 'item'):
@@ -126,8 +133,8 @@ async def api_stock(ticker: str):
             "sparkline": sparkline,
             "volume": volume,
         }
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception as error:
+        return JSONResponse({"error": sanitize_error(error)}, status_code=500)
 
 
 @app.get("/api/history/{ticker}")

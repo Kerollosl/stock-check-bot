@@ -24,6 +24,19 @@ def load_watchlist(config_path: str = "config.yaml") -> list[str]:
     return cfg.get("watchlist", [])
 
 
+def load_dip_config(config_path: str = "config.yaml") -> dict:
+    """Load configured dip thresholds using analyzer argument names."""
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    dip_config = config.get("dip_detection", {})
+    return {
+        "daily_threshold": dip_config.get("daily_drop_pct", -3.0),
+        "weekly_threshold": dip_config.get("weekly_drop_pct", -7.0),
+        "from_high_threshold": dip_config.get("from_high_pct", -15.0),
+        "lookback": dip_config.get("lookback_days", 252),
+    }
+
+
 @click.group()
 def cli():
     """Stock Check Bot — Weighted algorithmic analysis to remove emotion from investing."""
@@ -125,6 +138,61 @@ def full(config, ticker):
 
 
 @cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--ticker", "-t", multiple=True, help="Override watchlist with specific tickers")
+@click.option("--output", required=True, help="Path for the structured JSON report")
+@click.option("--summary", required=True, help="Path for the Markdown summary")
+@click.option("--events", required=True, help="Path for the comparison event JSON")
+@click.option("--previous", default=None, help="Optional previous report JSON")
+@click.option(
+    "--score-delta",
+    default=0.05,
+    type=click.FloatRange(min=0.0),
+    show_default=True,
+    help="Minimum absolute score change worth reporting",
+)
+def report(config, ticker, output, summary, events, previous, score_delta):
+    """Create structured output for scheduled monitoring."""
+    from .reporting import (
+        build_report,
+        compare_reports,
+        load_previous_report,
+        render_markdown,
+        write_json,
+        write_text,
+    )
+
+    tickers = list(ticker) if ticker else load_watchlist(config)
+    if not tickers:
+        raise click.ClickException("No tickers configured")
+
+    current_report = build_report(tickers, config)
+    previous_report, state_warning = load_previous_report(previous)
+    if state_warning:
+        current_report["warnings"].append(
+            {"scope": "comparison_state", "message": state_warning}
+        )
+        if current_report["status"] == "ok":
+            current_report["status"] = "warning"
+    comparison = compare_reports(current_report, previous_report, score_delta)
+    current_report["comparison"] = comparison
+
+    write_json(output, current_report)
+    write_json(events, comparison)
+    write_text(summary, render_markdown(current_report, comparison))
+
+    console.print(f"[green]Structured report:[/green] {output}")
+    console.print(f"[green]Markdown summary:[/green] {summary}")
+    console.print(
+        "Notification required: "
+        + ("yes" if comparison["notification_required"] else "no")
+    )
+
+    if current_report["status"] == "degraded":
+        raise click.exceptions.Exit(2)
+
+
+@cli.command()
 @click.argument("ticker")
 @click.option("--config", default="config.yaml", help="Path to config file")
 def check(ticker, config):
@@ -147,7 +215,7 @@ def check(ticker, config):
 
     ta = TechnicalAnalyzer(df)
     tech_scores = ta.get_all_scores()
-    dips = ta.detect_dips()
+    dips = ta.detect_dips(**load_dip_config(config))
 
     earnings = fetcher.get_earnings(ticker)
     fa = FundamentalAnalyzer(earnings)
