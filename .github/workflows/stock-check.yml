@@ -2,9 +2,22 @@ name: Stock check
 
 on:
   schedule:
-    - cron: "30 16 * * 1-5"
-      timezone: "America/New_York"
+    # UTC window spans the US trading day in both daylight and standard time.
+    # The NYSE calendar skips closed sessions and early closes.
+    - cron: "23 14-21 * * 1-5"
+    # Friday after the close: 5:43 PM EDT / 4:43 PM EST.
+    - cron: "43 21 * * 5"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Report to generate
+        type: choice
+        options: [scan, weekly]
+        default: scan
+      send:
+        description: Deliver qualifying alerts (leave off for a preview)
+        type: boolean
+        default: false
 
 permissions:
   actions: write
@@ -18,21 +31,18 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 20
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Initialize failure report
-        if: always()
-        shell: bash
         run: |
-          mkdir -p reports state
-          printf '# Stock Check failure\n\nThe workflow stopped before a structured report was generated. Review the workflow logs for the underlying error.\n' > reports/summary.md
+          mkdir -p reports/opportunities state
+          printf '# Opportunity scanner needs attention\n\nThe run stopped before it could generate a report. Open the job logs for details.\n' > reports/opportunities/summary.md
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
           cache: pip
@@ -43,94 +53,83 @@ jobs:
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
-      - name: Restore previous report
-        id: restore-state
-        uses: actions/cache/restore@v4
+      - name: Restore research queue and sent-alert ledger
+        uses: actions/cache/restore@v6.1.0
         with:
-          path: state/latest_report.json
-          key: stock-check-state-${{ github.run_id }}
+          path: state/opportunities.json
+          key: opportunity-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            stock-check-state-
+            opportunity-state-v2-
 
-      - name: Generate stock report
-        id: report
+      - name: Discover and evaluate opportunities
         env:
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM || secrets.SMTP_USER }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.gmail.com' }}
+          SMTP_PORT: ${{ vars.SMTP_PORT || '465' }}
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          REQUESTED_MODE: ${{ inputs.mode }}
+          REQUESTED_SEND: ${{ inputs.send }}
         shell: bash
         run: |
-          set +e
-          python -m src.main report \
-            --output reports/latest_report.json \
-            --summary reports/summary.md \
-            --events reports/events.json \
-            --previous state/latest_report.json
-          report_exit_code=$?
-          set -e
-
-          if [[ -f reports/events.json && -f reports/summary.md && -f reports/latest_report.json ]]; then
-            notification_required=$(python -c "import json; print(str(json.load(open('reports/events.json'))['notification_required']).lower())")
-            report_created=true
-          else
-            notification_required=true
-            report_created=false
-            printf '# Stock Check failure\n\nThe structured report could not be generated. Review the workflow logs for the underlying error.\n' > reports/summary.md
+          mode="${REQUESTED_MODE:-scan}"
+          if [[ "${SCHEDULE}" == "43 21 * * 5" ]]; then
+            mode=weekly
           fi
+          args=(--mode "$mode" --state state/opportunities.json --output-dir reports/opportunities)
+          if [[ "${EVENT_NAME}" == schedule ]]; then
+            args+=(--scheduled --send)
+          elif [[ "${REQUESTED_SEND}" == true ]]; then
+            args+=(--send)
+          fi
+          python -m src.opportunity_monitor "${args[@]}"
 
-          echo "exit_code=${report_exit_code}" >> "${GITHUB_OUTPUT}"
-          echo "notification_required=${notification_required}" >> "${GITHUB_OUTPUT}"
-          echo "report_created=${report_created}" >> "${GITHUB_OUTPUT}"
-
-      - name: Save report for the next run
-        if: steps.report.outputs.report_created == 'true'
-        shell: bash
-        run: cp reports/latest_report.json state/latest_report.json
-
-      - name: Cache report
-        if: steps.report.outputs.report_created == 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: state/latest_report.json
-          key: stock-check-state-${{ github.run_id }}
-
-      - name: Upload report artifact
+      - name: Preserve queue even if delivery needs a retry
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/cache/save@v6.1.0
         with:
-          name: stock-check-report-${{ github.run_id }}
-          path: reports/
+          path: state/opportunities.json
+          key: opportunity-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Save email preview and research evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: opportunity-brief-${{ github.run_id }}
+          path: reports/opportunities/
           retention-days: 30
 
-      - name: Add report to workflow summary
+      - name: Add readable summary
         if: always()
-        run: cat reports/summary.md >> "${GITHUB_STEP_SUMMARY}"
+        run: cat reports/opportunities/summary.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create or update alert issue
-        if: always() && (failure() || steps.report.outputs.notification_required == 'true')
+      - name: Report service failure once
+        if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          issue_title="Stock Check alert — $(TZ=America/New_York date +%Y-%m-%d)"
-          issue_number=$(gh issue list \
-            --repo "${GITHUB_REPOSITORY}" \
-            --state open \
-            --search "${issue_title} in:title" \
-            --json number,title \
-            --jq ".[] | select(.title == \"${issue_title}\") | .number" \
-            | head -n 1)
-
-          if [[ -n "${issue_number}" ]]; then
-            gh issue comment "${issue_number}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --body-file reports/summary.md
-          else
-            gh issue create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "${issue_title}" \
-              --body-file reports/summary.md \
-              --assignee "${GITHUB_REPOSITORY_OWNER}"
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search '"Opportunity scanner needs attention" in:title' --json number,title --jq '.[] | select(.title == "Opportunity scanner needs attention") | .number' | head -n1)
+          if [[ -z "$issue" ]]; then
+            printf 'The scanner or email delivery could not complete. Pending opportunity alerts have not been marked as delivered.\n\n[Open this run](%s/%s/actions/runs/%s) to see the error and email preview.\n\nThe issue closes after a successful delivery.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > reports/opportunities/failure.md
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "Opportunity scanner needs attention" --body-file reports/opportunities/failure.md --assignee "$GITHUB_REPOSITORY_OWNER"
           fi
 
-      - name: Fail on degraded data
-        if: steps.report.outputs.exit_code != '0'
-        run: exit 1
+      - name: Close resolved service alert
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          # A market-closed skip or preview cannot prove email delivery recovered.
+          status=$(python -c "import json; print(json.load(open('reports/opportunities/delivery.json')).get('status', 'unknown'))")
+          if [[ "$status" == accepted_by_mail_server || "$status" == delivered || "$status" == already_delivered ]]; then
+            issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search '"Opportunity scanner needs attention" in:title' --json number,title --jq '.[] | select(.title == "Opportunity scanner needs attention") | .number' | head -n1)
+            if [[ -n "$issue" ]]; then
+              gh issue close "$issue" --repo "$GITHUB_REPOSITORY"
+            fi
+          fi

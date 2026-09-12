@@ -11,7 +11,7 @@ def sanitize_error(error: BaseException) -> str:
         message,
     )
 
-    for variable in ("FRED_API_KEY",):
+    for variable in ("FRED_API_KEY", "SMTP_PASSWORD", "SMTP_USER", "SMTP_FROM", "EMAIL_TO", "GH_TOKEN", "GITHUB_TOKEN"):
         value = os.getenv(variable)
         if value:
             message = message.replace(value, "***")
