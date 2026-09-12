@@ -15,13 +15,13 @@ bargains or trade instructions.
 - **Dip Detection** — Alerts on daily drops, weekly drops, and distance from 52-week highs
 - **Strategy Backtesting** — Compare 5 built-in strategies (Momentum, Value, Macro-Driven, Balanced, Contrarian) against historical data
 - **Rich Terminal Dashboard** — Color-coded market report with stock cards, macro overview, and backtest comparison tables
-- **Dynamic discovery** — Screens the largest 750 eligible US-listed USD equities,
-  rather than only the six personal-watchlist names; refreshes the universe each run
+- **Focused discovery** — Screens the 100 largest eligible US-listed USD equities
+  above $25 billion in market value, then applies strict business-quality gates
 - **Quality and valuation gates** — Three years of positive owner cash flow,
   current quarterly statements, positive profit, resilient revenue, manageable
   leverage, a large drawdown, and a margin below the base valuation scenario
-- **Opportunity briefs** — Designed HTML email with a plain-text alternative:
-  business case, stress/base/upside values, research price, risks, and source links
+- **Concise alerts** — A plain private note with the verdict, ticker, current price,
+  research threshold, one reason, one risk, and a link to supporting detail
 - **Quiet monitoring** — Hourly checks during the US trading day, new-candidate
   alerts, thesis-change warnings, and a Friday roundup; unchanged ideas stay quiet
 
@@ -129,14 +129,15 @@ not proof of inbox placement; check Spam when first connecting the sender.
 
 ## How an opportunity is assessed
 
-1. **Discover:** refresh the largest 750 eligible NYSE/Nasdaq listings above
-   $5 billion in market value and 300,000 average daily shares traded. This is
+1. **Discover:** refresh the 100 largest eligible NYSE/Nasdaq listings above
+   $25 billion in market value and 300,000 average daily shares traded. This is
    a capped US-listed universe, not every stock worldwide.
 2. **Triage:** flag prices at least 15% below their 52-week highs, plus the
-   personal watchlist and earlier alerted names. Rotate up to 60 detailed checks
+   personal watchlist and earlier alerted names. Rotate up to 50 detailed checks
    per run, reserving capacity for new discoveries. Earlier alerts remain
    tracked even if they leave the discovery universe.
-3. **Check quality:** require positive net profit, at least a 10% operating
+3. **Check quality:** this is what turns the biggest-stock universe into the
+   highest-quality shortlist. Require positive net profit, at least a 10% operating
    margin, nonnegative latest revenue growth, net debt/EBITDA at most 3, and
    positive owner cash in three consecutive years and the latest four quarters.
    Owner cash is operating cash flow less absolute capital expenditure and

@@ -1,4 +1,4 @@
-"""Readable opportunity briefs, shared by email, previews and GitHub fallback."""
+"""Concise opportunity alerts shared by email, previews, and GitHub fallback."""
 
 from datetime import datetime
 from pathlib import Path
@@ -25,58 +25,107 @@ def safe_url(value):
         return ""
 
 
+def short_quality(item):
+    metrics = item.get("metrics") or {}
+    facts = []
+    if isinstance(metrics.get("operating_margin_pct"), (int, float)):
+        facts.append(f"{number(metrics['operating_margin_pct'], 0, '%')} operating margin")
+    if isinstance(metrics.get("revenue_growth_pct"), (int, float)):
+        facts.append(f"{number(metrics['revenue_growth_pct'], 0, '%', signed=True)} revenue growth")
+    annual = metrics.get("annual_owner_cash_flows") or []
+    if annual and all(isinstance(value, (int, float)) and value > 0 for value in annual):
+        facts.append(f"positive cash flow for {len(annual)} years")
+    return "; ".join(facts) + "." if facts else "Passed every business-quality check."
+
+
+def short_risk(item):
+    risk = str((item.get("risks") or ["The valuation assumptions may be wrong."])[0])
+    short = risk.split(";", 1)[0].strip()
+    if len(short) > 140:
+        short = short[:137].rsplit(" ", 1)[0] + "…"
+    return short if short.endswith((".", "!", "?", "…")) else short + "."
+
+
+def wait_reason(item):
+    price = item.get("price")
+    research_price = (item.get("valuation") or {}).get("research_price")
+    if (isinstance(price, (int, float)) and isinstance(research_price, (int, float))
+            and price > research_price > 0):
+        gap = 100 * (price / research_price - 1)
+        return f"Price is {number(gap, 0, '%')} above the research level."
+    return "The conservative valuation test did not clear."
+
+
 def as_of(value):
     try:
-        moment = datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(ZoneInfo('America/New_York'))
-        return moment.strftime('%b %-d, %-I:%M %p ET')
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(
+            ZoneInfo("America/New_York")
+        )
+        return moment.strftime("%b %-d, %-I:%M %p ET")
     except (TypeError, ValueError):
-        return 'Unavailable'
+        return "Unavailable"
 
 
 def _display(report):
-    selected = report.get("notification", {}).get("tickers", [])
+    tickers = report.get("notification", {}).get("tickers", [])
     by_ticker = {item["ticker"]: item for item in report.get("items", [])}
-    return [by_ticker[ticker] for ticker in selected if ticker in by_ticker]
+    return [by_ticker[ticker] for ticker in tickers if ticker in by_ticker]
 
 
 def brief_context(report):
-    candidates = [x for x in report.get("items", []) if x["status"] == "candidate"]
-    watching = [x for x in report.get("items", []) if x["status"] == "watch"]
-    business_checks = {'Profitable business', 'Operating profitability', 'Revenue resilience', 'Balance-sheet capacity', 'Durable owner cash flow', 'Cash-flow resilience'}
-    rejected = [x for x in report.get("items", []) if x["status"] == "rejected" and any(check.get('name') in business_checks and check.get('passed') is False for check in x.get('quality_checks', []))]
-    close_to_zone = [x for x in watching if (x.get("valuation") or {}).get("research_price", 0) >= (x.get("price") or 0) * .8]
-    selected = _display(report)
+    candidates = [item for item in report.get("items", []) if item["status"] == "candidate"]
+    watching = [item for item in report.get("items", []) if item["status"] == "watch"]
     kind = report.get("notification", {}).get("kind", "preview")
+    selected = _display(report)
     if kind in ("weekly", "preview") or not report.get("notification", {}).get("required"):
         selected = candidates[:3]
-    if kind == "opportunity" and selected:
-        lead = selected[0]
-        title = f"{lead['name']}, at a price worth researching."
-        subject = f"{lead['ticker']}: {number(lead.get('metrics', {}).get('margin_of_safety_pct'), 0, '%')} below model value — worth a closer look"
-        intro = "The business cleared the quality checks and its price entered your research zone. Here is the case to investigate, and what could undo it."
-    elif kind == "thesis_change":
-        title = "An earlier idea needs another look."
-        subject = "Thesis check: " + ", ".join(x["ticker"] for x in selected)
-        intro = "A previously surfaced company no longer clears the same quality or valuation checks. Review the changed evidence before relying on the earlier brief."
-    elif candidates:
-        title = "Good businesses. Prices worth a closer look."
-        subject = f"Your weekly shortlist: {len(candidates)} research candidates"
-        intro = "Your long-term shortlist, refreshed from current prices and reported cash flows. Start with the case, then test the assumptions."
+
+    if kind == "thesis_change" and selected:
+        title = "Step back: " + ", ".join(item["ticker"] for item in selected)
+        subject = "Stock Check: " + title
+        intro = "A previously surfaced company failed a business-quality check."
+    elif selected:
+        title = "Research now: " + ", ".join(item["ticker"] for item in selected)
+        subject = "Stock Check: " + title
+        intro = "The price now clears every quality and valuation rule."
     else:
-        title = "Patience is part of the strategy."
-        subject = "Your weekly shortlist: no qualifying bargains yet"
-        intro = "Nothing checked in this run cleared every quality and valuation rule. Here are the closest business-and-price combinations, and why other apparent discounts did not make the cut."
-    if report.get("status") == "degraded":
-        title = "The scanner needs attention."
-        subject = "Stock Check: market scan incomplete"
-        intro = "The scan could not establish enough current evidence. This is a coverage update; it does not mean there are no opportunities."
-    generated = datetime.fromisoformat(report["generated_at"]).astimezone(ZoneInfo("America/New_York"))
-    return dict(report=report, title=title, subject=subject, intro=intro,
-                selected=selected, watching=(close_to_zone or watching)[:3], rejected=rejected[:2],
-                watch_title="Getting close" if close_to_zone else "Good businesses. Still too expensive.",
-                watch_intro="These cleared the business checks and are within another 20% price decline of the research zone." if close_to_zone else "These cleared the business checks, but even the closest need a substantial price decline under this conservative model.",
-                candidates=candidates, date_label=generated.strftime("%B %-d, %Y · %-I:%M %p ET"),
-                kind=kind, money=money, number=number, safe_url=safe_url, as_of=as_of)
+        title = "No action."
+        subject = "Stock Check: no action this week"
+        intro = "None of the elite large-cap companies checked is cheap enough."
+
+    status = report.get("status")
+    if status == "degraded":
+        selected = []
+        title = "No signal."
+        subject = "Stock Check: scan incomplete"
+        intro = "The data was incomplete, so the scanner withheld a conclusion."
+    elif not selected:
+        intro = "No qualifying signal from the completed checks."
+
+    generated = datetime.fromisoformat(report["generated_at"]).astimezone(
+        ZoneInfo("America/New_York")
+    )
+    limit = report.get("universe", {}).get("requested_limit") or report.get("counts", {}).get("screened", 0)
+    incomplete = report.get("counts", {}).get("incomplete", 0)
+    return {
+        "report": report,
+        "title": title,
+        "subject": subject,
+        "intro": intro,
+        "selected": selected,
+        "watching": watching[:1] if not selected and status != "degraded" else [],
+        "date_label": generated.strftime("%B %-d, %Y"),
+        "universe_label": f"largest {limit} eligible U.S.-listed companies",
+        "coverage_note": f"{incomplete} companies lacked complete data." if incomplete else "",
+        "kind": kind,
+        "money": money,
+        "number": number,
+        "safe_url": safe_url,
+        "as_of": as_of,
+        "short_quality": short_quality,
+        "short_risk": short_risk,
+        "wait_reason": wait_reason,
+    }
 
 
 def render_html(report):
@@ -87,68 +136,66 @@ def render_html(report):
     return environment.get_template("opportunity_email.html").render(**brief_context(report))
 
 
+def _item_lines(item):
+    valuation = item.get("valuation") or {}
+    if item["status"] == "candidate":
+        return [
+            f"{item['ticker']} — {item['name']} — {money(item.get('price'))}",
+            f"Research zone: {money(valuation.get('research_price', valuation.get('entry_price')))} or below.",
+            "Why: " + short_quality(item),
+            "Risk: " + short_risk(item),
+            "Next: Read the latest filing and earnings call.",
+        ]
+    return [
+        f"{item['ticker']} — {item['name']}",
+        "Step back: " + str(item.get("first_rejection") or "A business-quality check failed."),
+        "Next: " + item.get("next_step", "Review the latest company filing."),
+    ]
+
+
 def render_text(report):
     ctx = brief_context(report)
-    counts = report.get("counts", {})
-    lines = [ctx["title"], ctx["date_label"], "", ctx["intro"], "",
-             f"{counts.get('screened', 0)} stocks screened · {counts.get('evaluated', 0)} examined · {counts.get('candidates', 0)} research candidates", ""]
+    lines = [ctx["title"], ctx["date_label"], "", ctx["intro"]]
     for item in ctx["selected"]:
-        metrics, valuation = item.get("metrics", {}), item.get("valuation") or {}
-        lines += [f"{item['ticker']} — {item['name']}", f"Price: {money(item.get('price'))}",
-                  item.get("why_now", ""),
-                  ("Changed evidence: " + str(item.get("first_rejection", ""))) if item['status'] != 'candidate' else ("Why it passed: " + item.get("quality_summary", "")),
-                  "Valuation: " + item.get("valuation_summary", ""),
-                  f"Model scenarios: stress {money(valuation.get('low'))} / base {money(valuation.get('base'))} / upside {money(valuation.get('high'))}",
-                  f"Research below: {money(valuation.get('research_price', valuation.get('entry_price')))}" if item['status'] == 'candidate' else "Price alone cannot restore this idea; the failed business check must be resolved.",
-                  "What could go wrong: " + "; ".join(item.get("risks", [])[:3]),
-                  "Next step: " + item.get("next_step", "Read the latest filing."), ""]
-        for source in item.get("sources", []):
-            if safe_url(source.get("url")):
-                lines.append(f"{source['label']}: {source['url']}")
-        lines.append("")
+        lines += ["", *_item_lines(item)]
     if ctx["watching"]:
-        lines.append(ctx["watch_title"].upper())
-        for item in ctx["watching"]:
-            valuation = item.get("valuation") or {}
-            lines.append(f"{item['ticker']}: {money(item.get('price'))}; research price {money(valuation.get('research_price', valuation.get('entry_price')))}. {item.get('first_rejection', '')}")
-        lines.append("")
-    if ctx["rejected"]:
-        lines.append("CHEAP-LOOKING, BUT DID NOT PASS")
-        lines += [f"{x['ticker']}: {x.get('first_rejection', '')}" for x in ctx["rejected"]]
-        lines.append("")
-    lines += ["Coverage: " + report.get("universe", {}).get("source", "Unavailable")]
-    lines += ["Scan note: " + note for note in report.get("scan_issues", [])[:4]]
-    lines += ["", "Screening candidates for further research, not verified bargains. Model values depend on cash-flow assumptions; a fall from a past high is not a valuation discount. No trades are placed."]
+        item = ctx["watching"][0]
+        valuation = item.get("valuation") or {}
+        lines += [
+            "",
+            f"Closest: {item['ticker']} — {item['name']} — {money(item.get('price'))}",
+            f"Wait. Recheck at {money(valuation.get('research_price', valuation.get('entry_price')))} or below.",
+            "Reason: " + wait_reason(item),
+        ]
     if safe_url(report.get("run_url")):
-        lines += ["Full scan and source snapshots: " + report["run_url"]]
+        lines += ["", "Details: " + report["run_url"]]
+    if ctx["coverage_note"]:
+        lines += ["", ctx["coverage_note"]]
+    lines += ["", "Research screen, not an instruction to buy or sell."]
     return "\n".join(lines)
 
 
 def render_markdown(report):
-    """Keep a useful fallback even without an authenticated email sender."""
+    """Keep the GitHub fallback as terse as the direct email."""
     ctx = brief_context(report)
-    lines = [f"# {ctx['title']}", "", ctx["intro"], "",
-             f"**{report.get('counts', {}).get('screened', 0)} stocks screened** · {ctx['date_label']}", ""]
+    lines = [f"# {ctx['title']}", "", ctx["intro"]]
     for item in ctx["selected"]:
-        value = item.get("valuation") or {}
-        lines += [f"## {item['ticker']} · {item['name']}", "", item.get("why_now", ""), "",
-                  (f"**Why the business passed:** {item.get('quality_summary', '')}" if item['status'] == 'candidate' else f"**What changed:** {item.get('first_rejection', '')}"), "",
-                  f"**Price {money(item.get('price'))}** · Model range {money(value.get('low'))}–{money(value.get('high'))}", "",
-                  (f"Research below {money(value.get('research_price', value.get('entry_price')))}" if item['status'] == 'candidate' else "Price alone cannot restore this idea; resolve the failed business check first."), "",
-                  "**The valuation case:** " + item.get("valuation_summary", ""), "",
-                  "**What could go wrong:** " + "; ".join(item.get("risks", [])[:3]), "",
-                  "**Next step:** " + item.get("next_step", "Read the latest filing."), ""]
-        links = [f"[{x['label']}]({x['url']})" for x in item.get("sources", []) if safe_url(x.get("url"))]
-        lines += [" · ".join(links), ""]
+        lines += ["", f"## {item['ticker']} · {item['name']}", ""]
+        lines += [f"- {line}" for line in _item_lines(item)[1:]]
     if ctx["watching"]:
-        lines += ["## " + ctx["watch_title"], "", ctx["watch_intro"], ""]
-        lines += [f"- **{x['ticker']}** — {x.get('first_rejection', '')}" for x in ctx["watching"]]
-    if ctx["rejected"]:
-        lines += ["", "## Why these apparent bargains did not pass", ""]
-        lines += [f"- **{x['ticker']}** — {x.get('first_rejection', '')}" for x in ctx["rejected"]]
-    lines += ["", "**Coverage:** " + report.get("universe", {}).get("source", "Unavailable")]
-    lines += ["- " + note for note in report.get("scan_issues", [])[:4]]
+        item = ctx["watching"][0]
+        valuation = item.get("valuation") or {}
+        lines += [
+            "",
+            f"**Closest:** {item['ticker']} · {item['name']} · {money(item.get('price'))}",
+            "",
+            f"Wait. Recheck at {money(valuation.get('research_price', valuation.get('entry_price')))} or below.",
+            "",
+            "Reason: " + wait_reason(item),
+        ]
     if safe_url(report.get("run_url")):
-        lines += ["", f"[Open the full report and email preview]({report['run_url']})"]
-    lines += ["", "_Research candidates, not verified bargains. Valuation ranges are assumption-driven estimates. No trades are placed._"]
+        lines += ["", f"[Details and sources]({report['run_url']})"]
+    if ctx["coverage_note"]:
+        lines += ["", ctx["coverage_note"]]
+    lines += ["", "_Research screen, not an instruction to buy or sell._"]
     return "\n".join(lines)

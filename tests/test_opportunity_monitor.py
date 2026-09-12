@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from src.opportunity_brief import render_html
+from src.opportunity_brief import brief_context, render_html, render_text
 from src.opportunity_delivery import deliver, email_message
 from src.opportunity_monitor import (
     cli, empty_state, market_scan_due, notification_plan, read_state,
@@ -35,8 +35,8 @@ def idea(ticker="TEST", status="candidate", price=80):
 def report(items=None, mode="scan"):
     items = [idea()] if items is None else items
     return {"items": items, "mode": mode, "status": "ok", "generated_at": NOW.isoformat(),
-            "counts": {"screened": 750, "evaluated": len(items), "candidates": sum(x["status"] == "candidate" for x in items)},
-            "universe": {"source": "Test fixture"}, "scan_issues": [],
+            "counts": {"screened": 100, "evaluated": len(items), "candidates": sum(x["status"] == "candidate" for x in items), "incomplete": 0},
+            "universe": {"source": "Test fixture", "requested_limit": 100}, "scan_issues": [],
             "notification": {"required": True, "kind": "opportunity", "tickers": [x["ticker"] for x in items], "week": "2026-W37"}}
 
 
@@ -165,11 +165,50 @@ class ScanTests(unittest.TestCase):
 
 
 class BriefTests(unittest.TestCase):
+    def test_empty_weekly_brief_is_direct_and_shows_only_one_closest_name(self):
+        first = idea("FIRST", status="watch")
+        second = idea("SECOND", status="watch")
+        current = report([first, second], mode="weekly")
+        current["notification"]["kind"] = "weekly"
+        current["notification"]["tickers"] = []
+        text = render_text(current)
+        self.assertTrue(text.startswith("No action."))
+        self.assertIn("Closest: FIRST", text)
+        self.assertNotIn("SECOND", text)
+        self.assertNotIn("stocks screened", text)
+        self.assertNotIn("Needs a 25% margin", text)
+        self.assertEqual(brief_context(current)["subject"], "Stock Check: no action this week")
+
+    def test_candidate_brief_leads_with_research_action_and_one_risk(self):
+        item = idea()
+        item["risks"] = ["First risk", "Second risk"]
+        text = render_text(report([item]))
+        self.assertTrue(text.startswith("Research now: TEST"))
+        self.assertIn("Research zone: $86.00 or below.", text)
+        self.assertIn("Risk: First risk.", text)
+        self.assertNotIn("Second risk", text)
+
+    def test_degraded_brief_never_displays_actionable_candidate(self):
+        current = report([idea()])
+        current["status"] = "degraded"
+        text = render_text(current)
+        self.assertTrue(text.startswith("No signal."))
+        self.assertNotIn("Research now", text)
+        self.assertNotIn("Research zone", text)
+
+    def test_partial_brief_discloses_missing_checks_concisely(self):
+        current = report([], mode="weekly")
+        current["status"] = "partial"
+        current["counts"]["incomplete"] = 3
+        text = render_text(current)
+        self.assertIn("No qualifying signal from the completed checks.", text)
+        self.assertIn("3 companies lacked complete data.", text)
+
     def test_thesis_change_does_not_present_rejected_stock_as_qualifying(self):
         current = report([idea(status='rejected')])
         current['notification']['kind'] = 'thesis_change'
         html = render_html(current)
-        self.assertIn('What changed.', html)
+        self.assertIn('Step back:', html)
         self.assertIn('Revenue declined', html)
         self.assertNotIn('Why the business passed', html)
         self.assertNotIn('Research zone:', html)

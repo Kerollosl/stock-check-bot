@@ -55,11 +55,11 @@ dip_detection:
 # Background opportunity discovery. The original watchlist/dashboard still work.
 # These are screening assumptions, not optimized return forecasts.
 opportunity:
-  universe_limit: 750
-  min_market_cap: 5000000000
+  universe_limit: 100
+  min_market_cap: 25000000000
   min_average_volume: 300000
   min_average_daily_dollar_volume: 20000000
-  max_deep_checks: 60
+  max_deep_checks: 50
   workers: 3
   prefilter_drawdown_pct: 15
   min_drawdown_pct: 20

@@ -6,94 +6,53 @@
   <meta name="color-scheme" content="light">
   <title>{{ subject }}</title>
   <style>
-    body { margin:0; padding:0; background:#F7F6F3; color:#242824; }
-    a { color:#346538; }
-    @media(max-width:600px) {
-      .outer-pad { padding:12px 8px !important; }
-      .content-pad { padding-left:24px !important; padding-right:24px !important; }
-      .hero-title { font-size:36px !important; }
-      .metric { display:block !important; width:100% !important; padding:12px 16px !important; box-sizing:border-box; }
-      .case-title { font-size:28px !important; }
-    }
+    body { margin:0; padding:0; background:#ffffff; color:#171717; }
+    a { color:#171717; text-underline-offset:3px; }
+    @media(max-width:600px) { .content { padding:28px 20px !important; } }
   </style>
 </head>
 <body>
-  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all">{{ intro }}</div>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F7F6F3;font-family:'Helvetica Neue',Arial,sans-serif">
-    <tr><td align="center" class="outer-pad" style="padding:32px 16px">
-      <table role="presentation" width="680" cellspacing="0" cellpadding="0" style="width:100%;max-width:680px;background:#FFFFFF;border:1px solid #EAEAEA">
-        <tr><td class="content-pad" style="padding:30px 44px 24px;border-bottom:1px solid #EAEAEA">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
-            <td style="font-size:13px;font-weight:700;letter-spacing:2px">STOCK CHECK</td>
-            <td align="right" style="font-size:11px;color:#687066;letter-spacing:1px">THE OPPORTUNITY BRIEF</td>
-          </tr></table>
-        </td></tr>
-        <tr><td class="content-pad" style="padding:36px 44px 28px">
-          <p style="margin:0 0 18px;font-size:12px;color:#626B61">{{ date_label }} · Long-term investing</p>
-          <h1 class="hero-title" style="font-family:Georgia,'Times New Roman',serif;font-size:44px;line-height:1.08;letter-spacing:-1.3px;font-weight:400;margin:0 0 22px">{{ title }}</h1>
-          <p style="margin:0;font-size:16px;line-height:1.7;color:#4C554B">{{ intro }}</p>
-          <p style="margin:25px 0 0;font-size:12px;line-height:1.7;color:#626B61;border-top:1px solid #EAEAEA;padding-top:18px"><strong style="color:#242824">{{ report.counts.screened }}</strong> stocks screened &nbsp; / &nbsp; <strong style="color:#242824">{{ report.counts.evaluated }}</strong> examined &nbsp; / &nbsp; <strong style="color:#346538">{{ report.counts.candidates }}</strong> research candidates</p>
-          {% if kind == 'weekly' and report.get('week_activity') %}<p style="font-size:12px;line-height:1.7;color:#626B61;margin:10px 0 0">Past seven days: {{ report.week_activity.days_scanned }} days scanned; {{ report.week_activity.tickers_surfaced | length }} distinct candidates surfaced{% if report.week_activity.tickers_surfaced %} ({{ report.week_activity.tickers_surfaced | join(', ') }}){% endif %}. Earlier candidates may no longer qualify at today's price.</p>{% endif %}
-        </td></tr>
-        {% for item in selected %}
-        {% set v = item.valuation or {} %}{% set m = item.metrics or {} %}
-        <tr><td class="content-pad" style="padding:30px 44px;border-top:1px solid #EAEAEA">
-          <p style="margin:0 0 12px;font-size:11px;letter-spacing:1.5px;color:#346538;font-weight:700">{% if item.status == 'candidate' %}WORTH RESEARCHING{% else %}THESIS CHECK{% endif %} &nbsp; {{ '%02d'|format(loop.index) }}</p>
-          <h2 class="case-title" style="font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:32px;line-height:1.2;letter-spacing:-.5px;margin:0 0 8px">{{ item.name }}</h2>
-          <p style="margin:0 0 22px;color:#626B61;font-size:13px">{{ item.ticker }} &nbsp;·&nbsp; {{ item.sector }}</p>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F7F6F3;border:1px solid #EAEAEA"><tr>
-            <td class="metric" width="33%" style="padding:18px 14px;vertical-align:top"><span style="font-size:11px;color:#626B61">CURRENT PRICE</span><br><strong style="display:block;margin-top:7px;font-size:24px;font-weight:500">{{ money(item.price) }}</strong></td>
-            <td class="metric" width="34%" style="padding:18px 14px;vertical-align:top"><span style="font-size:11px;color:#626B61">BELOW BASE MODEL</span><br><strong style="display:block;margin-top:7px;font-size:24px;color:#346538;font-weight:500">{{ number(m.get('margin_of_safety_pct'), 0, '%') }}</strong></td>
-            <td class="metric" width="33%" style="padding:18px 14px;vertical-align:top"><span style="font-size:11px;color:#626B61">FROM 52-WEEK HIGH</span><br><strong style="display:block;margin-top:7px;font-size:24px;font-weight:500">{{ number(m.get('drawdown_pct'), 0, '%') }}</strong></td>
-          </tr></table>
-          <p style="font-size:11px;line-height:1.5;color:#626B61;margin:8px 0 22px">Price as of {{ as_of(item.quote_as_of) }}. A fall from the high is context, not evidence of fair value.</p>
-          <p style="font-size:15px;line-height:1.65;margin:0 0 20px">{{ item.why_now }}</p>
-          {% if item.status != 'candidate' %}<p style="font-size:14px;line-height:1.65;color:#9F2F2D;background:#FDEBEC;padding:14px 16px;margin:0 0 20px"><strong>What changed.</strong> {{ item.first_rejection }} A lower price alone does not resolve this business issue.</p>{% endif %}
-          <h3 style="font-size:13px;margin:0 0 8px">{% if item.status == 'candidate' %}Why the business passed{% else %}Current business evidence{% endif %}</h3>
-          <p style="font-size:14px;line-height:1.7;color:#4C554B;margin:0 0 20px">{{ item.quality_summary }}</p>
-          <p style="font-size:11px;line-height:1.6;color:#626B61;margin:-10px 0 20px">Financial period through {{ item.get('latest_fiscal_period') or 'unavailable' }}. Cash is normalized to the lower of the latest year and the three-year median.</p>
-          <h3 style="font-size:13px;margin:0 0 8px">What the price is asking you to believe</h3>
-          <p style="font-size:14px;line-height:1.7;color:#4C554B;margin:0 0 16px">{{ item.valuation_summary }}</p>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:13px;line-height:1.7;border-top:1px solid #EAEAEA;border-bottom:1px solid #EAEAEA">
-            <tr><td style="padding:12px 0">Stress case</td><td align="right">{{ money(v.get('low')) }}</td></tr>
-            <tr><td style="padding:0 0 12px">Base case</td><td align="right">{{ money(v.get('base')) }}</td></tr>
-            <tr><td style="padding:0 0 12px">Upside case</td><td align="right">{{ money(v.get('high')) }}</td></tr>
-          </table>
-          {% if item.status == 'candidate' %}<p style="font-size:13px;line-height:1.6;color:#346538;background:#EDF3EC;padding:14px 16px;margin:16px 0 8px"><strong>Research zone: {{ money(v.get('research_price', v.get('entry_price'))) }} or below.</strong><br>This clears the discount and stress-case price rules if business inputs hold; it is not an instruction to buy.</p>{% endif %}
-          <p style="font-size:11px;line-height:1.6;color:#626B61;margin:0 0 22px">{% if v.get('assumptions') %}{{ v.assumptions[2] }} {{ v.assumptions[4] }}{% endif %} Full inputs and assumptions are in the downloadable scan report.</p>
-          <h3 style="font-size:13px;margin:0 0 8px;color:#9F2F2D">What could go wrong</h3>
-          <ul style="padding-left:19px;margin:0 0 22px;color:#4C554B;font-size:14px;line-height:1.65">{% for risk in item.risks[:3] %}<li style="margin-bottom:7px">{{ risk }}</li>{% endfor %}</ul>
-          {% if item.news %}
-          <h3 style="font-size:13px;margin:0 0 8px">Recent coverage to investigate</h3>
-          {% for news in item.news[:2] %}{% if safe_url(news.url) %}<p style="font-size:13px;line-height:1.6;margin:0 0 10px"><a href="{{ safe_url(news.url) }}">{{ news.title }}</a><br><span style="font-size:11px;color:#626B61">{{ news.publisher }} · {{ news.published_at }}</span></p>{% endif %}{% endfor %}
-          <p style="font-size:11px;line-height:1.6;color:#626B61;margin:0 0 22px">Related coverage is not proof of why the stock fell. Confirm the cause in company disclosures.</p>
-          {% endif %}
-          <p style="font-size:14px;line-height:1.7;margin:0 0 18px"><strong>Your next step.</strong> {{ item.next_step }}</p>
-          <p style="font-size:12px;line-height:1.8;margin:0">{% for source in item.sources %}{% if safe_url(source.url) %}<a href="{{ safe_url(source.url) }}">{{ source.label }}</a>{% if not loop.last %} &nbsp;·&nbsp; {% endif %}{% endif %}{% endfor %}</p>
-        </td></tr>
-        {% endfor %}
-        {% if watching %}
-        <tr><td class="content-pad" style="padding:30px 44px;border-top:1px solid #EAEAEA">
-          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:27px;font-weight:400;margin:0 0 8px">{{ watch_title }}</h2>
-          <p style="font-size:14px;line-height:1.6;color:#626B61;margin:0 0 20px">{{ watch_intro }}</p>
-          {% for item in watching %}
-          <p style="font-size:14px;line-height:1.6;margin:0 0 5px"><strong>{{ item.ticker }}</strong> · {{ item.name }} &nbsp; {{ money(item.price) }}</p>
-          <p style="font-size:13px;line-height:1.65;color:#626B61;margin:0 0 19px">{{ item.first_rejection }}</p>
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all">{{ title }} {{ intro }}</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#ffffff;font-family:Arial,Helvetica,sans-serif">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellspacing="0" cellpadding="0" style="width:100%;max-width:560px">
+        <tr><td class="content" style="padding:40px 28px">
+          <p style="margin:0 0 20px;color:#6b6b6b;font-size:12px;line-height:1.4">Stock Check · {{ date_label }}</p>
+          <h1 style="margin:0 0 10px;font-size:28px;line-height:1.2;letter-spacing:-.5px">{{ title }}</h1>
+          <p style="margin:0 0 28px;font-size:16px;line-height:1.5">{{ intro }}</p>
+
+          {% for item in selected %}
+          {% set v = item.valuation or {} %}
+          <div style="border-top:1px solid #d9d9d9;padding:24px 0">
+            <h2 style="margin:0 0 6px;font-size:20px;line-height:1.3">{{ item.ticker }} · {{ item.name }}</h2>
+            <p style="margin:0 0 18px;color:#6b6b6b;font-size:13px">{{ money(item.price) }} · as of {{ as_of(item.quote_as_of) }}</p>
+            {% if item.status == 'candidate' %}
+            <p style="margin:0 0 10px;font-size:15px;line-height:1.5"><strong>Research zone:</strong> {{ money(v.get('research_price', v.get('entry_price'))) }} or below</p>
+            <p style="margin:0 0 10px;font-size:15px;line-height:1.5"><strong>Why:</strong> {{ short_quality(item) }}</p>
+            <p style="margin:0 0 10px;font-size:15px;line-height:1.5"><strong>Risk:</strong> {{ short_risk(item) }}</p>
+            <p style="margin:0;font-size:15px;line-height:1.5"><strong>Next:</strong> Read the latest filing and earnings call.</p>
+            {% else %}
+            <p style="margin:0 0 10px;font-size:15px;line-height:1.5"><strong>Step back:</strong> {{ item.first_rejection }}</p>
+            <p style="margin:0;font-size:15px;line-height:1.5"><strong>Next:</strong> {{ item.next_step }}</p>
+            {% endif %}
+          </div>
           {% endfor %}
-        </td></tr>
-        {% endif %}
-        {% if rejected %}
-        <tr><td class="content-pad" style="padding:28px 44px;background:#FBFBFA;border-top:1px solid #EAEAEA">
-          <h2 style="font-size:15px;margin:0 0 16px">A low price is not enough</h2>
-          {% for item in rejected %}<p style="font-size:13px;line-height:1.7;color:#626B61;margin:0 0 12px"><strong style="color:#242824">{{ item.ticker }}</strong> — {{ item.first_rejection }}</p>{% endfor %}
-        </td></tr>
-        {% endif %}
-        <tr><td class="content-pad" style="padding:26px 44px;border-top:1px solid #EAEAEA">
-          {% if safe_url(report.get('run_url')) %}<a href="{{ safe_url(report.run_url) }}" style="display:inline-block;padding:13px 18px;border-radius:4px;background:#242824;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:600">Open the full scan &amp; sources</a>{% endif %}
-          <p style="font-size:11px;line-height:1.7;color:#626B61;margin:20px 0 8px"><strong>Coverage.</strong> {{ report.universe.source }}. {{ report.counts.evaluated }} companies received detailed checks in this run; other discounted names rotate into later runs. Financials are provider-supplied reported data, not independently reconciled filings.</p>
-          {% for note in report.scan_issues[:4] %}<p style="font-size:11px;line-height:1.7;color:#956400;margin:0 0 6px">{{ note }}</p>{% endfor %}
-          <p style="font-size:11px;line-height:1.7;color:#626B61;margin:10px 0 0">These are research candidates, not verified bargains or promises of return. Estimated values move when assumptions or business results change. This monitor places no trades.</p>
-          <p style="font-size:11px;line-height:1.7;color:#626B61;margin:12px 0 0">Your schedule: opportunity alerts when something qualifies, plus a Friday roundup. To pause emails, disable the Stock check workflow in GitHub Actions.</p>
+
+          {% if watching %}
+          {% set item = watching[0] %}{% set v = item.valuation or {} %}
+          <div style="border-top:1px solid #d9d9d9;padding:24px 0">
+            <h2 style="margin:0 0 6px;font-size:20px;line-height:1.3">Closest: {{ item.ticker }} · {{ item.name }}</h2>
+            <p style="margin:0 0 14px;color:#6b6b6b;font-size:13px">{{ money(item.price) }} · as of {{ as_of(item.quote_as_of) }}</p>
+            <p style="margin:0 0 10px;font-size:15px;line-height:1.5"><strong>Wait.</strong> Recheck at {{ money(v.get('research_price', v.get('entry_price'))) }} or below.</p>
+            <p style="margin:0;font-size:15px;line-height:1.5"><strong>Reason:</strong> {{ wait_reason(item) }}</p>
+          </div>
+          {% endif %}
+
+          <div style="border-top:1px solid #d9d9d9;padding-top:20px">
+            {% if safe_url(report.get('run_url')) %}<p style="margin:0 0 12px;font-size:13px"><a href="{{ safe_url(report.run_url) }}">Details and sources</a></p>{% endif %}
+            {% if coverage_note %}<p style="margin:0 0 8px;color:#6b6b6b;font-size:11px;line-height:1.5">{{ coverage_note }}</p>{% endif %}
+            <p style="margin:0;color:#6b6b6b;font-size:11px;line-height:1.5">Checks the {{ universe_label }}. Research screen, not an instruction to buy or sell.</p>
+          </div>
         </td></tr>
       </table>
     </td></tr>
