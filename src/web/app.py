@@ -47,7 +47,7 @@ def load_watchlist() -> list[str]:
 
 def get_macro_scores():
     now = datetime.now()
-    if _macro_cache["scores"] and _macro_cache["ts"] and (now - _macro_cache["ts"]).seconds < 300:
+    if _macro_cache["scores"] and _macro_cache["ts"] and (now - _macro_cache["ts"]).total_seconds() < 300:
         return _macro_cache["scores"]
     macro = MacroAnalyzer(fetcher)
     scores = macro.get_all_scores()
@@ -57,7 +57,7 @@ def get_macro_scores():
 
 
 @app.get("/")
-async def dashboard(request: Request):
+def dashboard(request: Request):
     tickers = load_watchlist()
     return templates.TemplateResponse(
         request, "dashboard.html", {"tickers": tickers}
@@ -65,19 +65,19 @@ async def dashboard(request: Request):
 
 
 @app.get("/api/config")
-async def api_config():
+def api_config():
     return {"watchlist": load_watchlist()}
 
 
 @app.get("/api/macro")
-async def api_macro():
+def api_macro():
     scores = get_macro_scores()
     avg = sum(scores.values()) / len(scores) if scores else 0.5
     return {"scores": scores, "overall": round(avg, 4)}
 
 
 @app.get("/api/stock/{ticker}")
-async def api_stock(ticker: str):
+def api_stock(ticker: str):
     try:
         df = fetcher.get_stock_history(ticker, period="2y")
         if df.empty or len(df) < 50:
@@ -138,7 +138,7 @@ async def api_stock(ticker: str):
 
 
 @app.get("/api/history/{ticker}")
-async def api_history(ticker: str, period: str = "1y"):
+def api_history(ticker: str, period: str = "1y"):
     df = fetcher.get_stock_history(ticker, period=period)
     if df.empty:
         return JSONResponse({"error": "No data"}, status_code=404)
@@ -158,7 +158,7 @@ async def api_history(ticker: str, period: str = "1y"):
 
 
 @app.get("/api/backtest/{ticker}")
-async def api_backtest(ticker: str):
+def api_backtest(ticker: str):
     cfg = get_config()
     bt_cfg = cfg.get("backtest", {})
 
@@ -180,3 +180,4 @@ async def api_backtest(ticker: str):
         ]
 
     return {"ticker": ticker, "results": results}
+

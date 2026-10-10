@@ -231,3 +231,8 @@ src/
 - **Stock data**: [yfinance](https://github.com/ranaroussi/yfinance) (free, no API key)
 - **Macro data**: [FRED API](https://fred.stlouisfed.org/) (free API key required)
 - **VIX**: Yahoo Finance via yfinance
+
+
+## Cleanup behavior and validation limits
+
+Backtests calculate signals from prior closes and fill at the next open. End-of-day values include transaction fees. Fundamental and macro historical scores remain fixed; interpret these results as technical-only comparisons, not historical fundamental research. Web analysis runs in thread-backed handlers.

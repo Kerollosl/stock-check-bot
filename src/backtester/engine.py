@@ -27,7 +27,7 @@ class BacktestEngine:
     ) -> dict:
         """Run backtest for a single ticker with a given strategy weight config."""
         df = self.fetcher.get_stock_history_range(ticker, start_date, end_date)
-        if df.empty or len(df) < 200:
+        if df.empty or len(df) <= 200:
             return {"error": f"Insufficient data for {ticker}"}
 
         weights = strategy_config["weights"]
@@ -46,8 +46,10 @@ class BacktestEngine:
 
         # Use a rolling window approach
         for i in range(200, len(tech_df)):
-            window = tech_df.iloc[: i + 1]
-            current_price = window["Close"].iloc[-1]
+            window = tech_df.iloc[:i]
+            current_price = float(tech_df["Open"].iloc[i])
+            if not np.isfinite(current_price) or current_price <= 0:
+                return {"error": "Invalid execution price"}
 
             # Compute technical scores on the window
             ta = TechnicalAnalyzer(window.reset_index(drop=True)
@@ -72,11 +74,6 @@ class BacktestEngine:
 
             composite = self._compute_weighted(
                 tech_scores, fund_scores, macro_scores, weights
-            )
-
-            portfolio_val = capital + shares * current_price
-            portfolio_values.append(
-                {"date": tech_df.index[i], "value": portfolio_val, "score": composite}
             )
 
             # Trading logic
@@ -112,6 +109,8 @@ class BacktestEngine:
                 shares = 0
                 position = "cash"
 
+            portfolio_values.append({"date": tech_df.index[i], "value": capital + shares * float(tech_df["Close"].iloc[i]), "score": composite})
+
         # Final portfolio value
         final_price = tech_df["Close"].iloc[-1]
         final_value = capital + shares * final_price
@@ -127,23 +126,25 @@ class BacktestEngine:
         annualized = ((final_value / self.initial_capital) ** (1 / years) - 1) * 100
 
         # Max drawdown
-        peak = pv["value"].expanding().max()
+        peak = pv["value"].expanding().max().clip(lower=self.initial_capital)
         drawdown = (pv["value"] - peak) / peak
         max_drawdown = drawdown.min() * 100
 
         # Sharpe ratio (approximate)
-        daily_returns = pv["value"].pct_change().dropna()
+        daily_returns = pd.concat([pd.Series([self.initial_capital]), pv["value"].reset_index(drop=True)], ignore_index=True).pct_change().dropna()
         sharpe = 0.0
         if len(daily_returns) > 1 and daily_returns.std() > 0:
             sharpe = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252)
 
         # Buy and hold comparison
-        bh_start = tech_df["Close"].iloc[200]
+        bh_start = tech_df["Open"].iloc[200]
         bh_return = (final_price / bh_start - 1) * 100
 
         return {
             "ticker": ticker,
             "strategy": strategy_config.get("name", "Custom"),
+            "execution": "prior-close signal / next-open fill",
+            "scope": "technical signals; fundamental/macro held neutral",
             "total_return_pct": round(total_return, 2),
             "annualized_return_pct": round(annualized, 2),
             "max_drawdown_pct": round(max_drawdown, 2),
@@ -191,3 +192,4 @@ class BacktestEngine:
 
         results.sort(key=lambda r: r["sharpe_ratio"], reverse=True)
         return results
+
